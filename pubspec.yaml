@@ -1,0 +1,21 @@
+name: lumide_github_copilot
+description: GitHub Copilot plugin for Lumide IDE. Provides AI-powered code completions.
+version: 1.0.0
+homepage: https://lumide.dev
+repository: https://github.com/SoFluffyOS/lumide_github_copilot
+topics:
+  - ai
+  - copilot
+  - completion
+  - lumide-ai
+  - lumide-plugin
+
+environment:
+  sdk: '>=3.2.0 <4.0.0'
+
+dependencies:
+  lumide_api: 1.1.0
+  path: ^1.9.1
+
+dev_dependencies:
+  lints: ^6.0.0

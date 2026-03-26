@@ -1,0 +1,30 @@
+id: lumide_github_copilot
+name: 'GitHub Copilot'
+description: 'AI-powered code completions from GitHub Copilot.'
+entry_point: 'bin/main.dart'
+
+activation_events:
+  - 'onAiCompletionProvider:lumide_github_copilot.copilot'
+
+permissions:
+  - shell:
+      - 'chmod'
+      - 'copilot-language-server'
+  - fileSystem:
+      - '${home}/.sofluffy/lumide/ai_providers/copilot/**'
+  - network:
+      - 'https://api.github.com/**'
+      - 'https://github.com/**'
+      - 'https://objects.githubusercontent.com/**'
+
+configuration:
+  - key: copilot.languageServerPath
+    type: string
+    title: 'Custom LSP Path'
+    description: 'Manual path to the Copilot language server binary.'
+
+contributes:
+  commands:
+    - id: copilot.signIn
+      title: 'GitHub Copilot: Sign In'
+      category: 'AI'
