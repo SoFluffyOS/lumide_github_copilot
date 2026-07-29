@@ -186,8 +186,8 @@ class CopilotPlugin extends LumidePlugin {
   Future<String?> _ensureBinary(LumideContext context) async {
     final customPath = await context.workspace.getConfiguration(_configPath);
     if (customPath is String && customPath.isNotEmpty) {
-      if (await context.fs.exists(customPath)) return customPath;
-      log('[Copilot] Configured language server does not exist: $customPath');
+      if (await _probeBinary(context, customPath)) return customPath;
+      log('[Copilot] Configured language server is not usable: $customPath');
     }
 
     final installDir = await _getInstallDir(context);
@@ -201,7 +201,10 @@ class CopilotPlugin extends LumidePlugin {
         : 'copilot-language-server';
     final binaryPath = p.join(installDir, binaryName);
 
-    if (await context.fs.exists(binaryPath)) return binaryPath;
+    if (await context.fs.exists(binaryPath)) {
+      if (await _prepareManagedBinary(context, binaryPath)) return binaryPath;
+      log('[Copilot] Existing language server is invalid; downloading again');
+    }
 
     final downloadUrl = await _fetchLatestDownloadUrl(context);
     if (downloadUrl == null) return null;
@@ -214,29 +217,12 @@ class CopilotPlugin extends LumidePlugin {
         extract: true,
       );
 
-      if (await context.fs.exists(binaryPath)) {
-        if (!io.Platform.isWindows) {
-          try {
-            final result = await context.shell.run('chmod', ['+x', binaryPath]);
-            if (result.exitCode != 0) {
-              log(
-                '[Copilot] Failed to make the language server executable: '
-                '${result.stderr}',
-              );
-              return null;
-            }
-          } catch (error, stackTrace) {
-            log(
-              '[Copilot] Failed to make the language server executable: '
-              '$error\n$stackTrace',
-            );
-            return null;
-          }
-        }
+      if (await context.fs.exists(binaryPath) &&
+          await _prepareManagedBinary(context, binaryPath)) {
         return binaryPath;
       }
       log(
-        '[Copilot] Download completed but no binary was extracted to '
+        '[Copilot] Download completed but no usable binary was extracted to '
         '$binaryPath',
       );
     } catch (error, stackTrace) {
@@ -247,6 +233,53 @@ class CopilotPlugin extends LumidePlugin {
     }
 
     return null;
+  }
+
+  Future<bool> _prepareManagedBinary(
+    LumideContext context,
+    String binaryPath,
+  ) async {
+    if (!io.Platform.isWindows) {
+      try {
+        final result = await context.shell.run('chmod', ['+x', binaryPath]);
+        if (result.exitCode != 0) {
+          log(
+            '[Copilot] Failed to make the language server executable: '
+            '${result.stderr}',
+          );
+          return false;
+        }
+      } catch (error, stackTrace) {
+        log(
+          '[Copilot] Failed to make the language server executable: '
+          '$error\n$stackTrace',
+        );
+        return false;
+      }
+    }
+
+    return _probeBinary(context, binaryPath);
+  }
+
+  Future<bool> _probeBinary(
+    LumideContext context,
+    String binaryPath,
+  ) async {
+    try {
+      final result = await context.shell.run(binaryPath, const ['--version']);
+      if (result.exitCode == 0) return true;
+
+      log(
+        '[Copilot] Language server probe failed with exit code '
+        '${result.exitCode}: ${result.stderr}',
+      );
+    } catch (error, stackTrace) {
+      log(
+        '[Copilot] Language server probe failed: '
+        '$error\n$stackTrace',
+      );
+    }
+    return false;
   }
 
   Future<String?> _getInstallDir(LumideContext context) async {
