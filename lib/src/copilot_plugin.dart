@@ -15,10 +15,15 @@ class CopilotPlugin extends LumidePlugin {
   static const _version = '1.0.0';
 
   bool _isActive = false;
+  bool _providerReady = false;
+  String _setupStatus = 'initializing';
 
   @override
   Future<void> onActivate(LumideContext context) async {
     _isActive = true;
+    _providerReady = false;
+    _setupStatus = 'initializing';
+    await _registerSetupProvider(context);
     await _registerSignInCommand(context);
     unawaited(_runLanguageServerSetup(context));
   }
@@ -32,6 +37,8 @@ class CopilotPlugin extends LumidePlugin {
     try {
       await _setupLanguageServer(context);
     } catch (error, stackTrace) {
+      _providerReady = false;
+      _setupStatus = 'error';
       log(
         '[Copilot] Language server setup failed: '
         '$error\n$stackTrace',
@@ -59,6 +66,7 @@ class CopilotPlugin extends LumidePlugin {
     if (!_isActive) return;
 
     if (binaryPath == null) {
+      _setupStatus = 'error';
       await context.window.showMessage(
         'Failed to download Copilot Language Server.',
         type: MessageType.error,
@@ -66,6 +74,7 @@ class CopilotPlugin extends LumidePlugin {
       return;
     }
 
+    _providerReady = true;
     try {
       await context.languages.registerLanguageServer(
         id: _providerId,
@@ -89,6 +98,8 @@ class CopilotPlugin extends LumidePlugin {
         },
       );
     } catch (error, stackTrace) {
+      _providerReady = false;
+      _setupStatus = 'error';
       log(
         '[Copilot] Failed to register the language server: '
         '$error\n$stackTrace',
@@ -103,12 +114,50 @@ class CopilotPlugin extends LumidePlugin {
     if (_isActive) unawaited(_setEditorInfo(context));
   }
 
+  Future<void> _registerSetupProvider(LumideContext context) async {
+    await context.languages.registerInlineCompletionProvider(
+      id: _providerId,
+      displayName: 'GitHub Copilot',
+      processName: 'Setting up Copilot Language Server...',
+      iconPath: 'assets/icon.svg',
+      supportsAuth: true,
+      onProvideCompletions: (_) async => const [],
+      checkStatus: () async {
+        if (_providerReady) return _checkStatus(context);
+        return _setupStatus;
+      },
+      signIn: () async {
+        if (_providerReady) return _signInFlow(context);
+        return {'userCode': '', 'verificationUri': '', 'expiresIn': 0};
+      },
+      signOut: () async {
+        if (!_providerReady) return;
+        await context.languages.sendLspRequest(_providerId, 'signOut', {});
+      },
+    );
+  }
+
   Future<void> _registerSignInCommand(LumideContext context) async {
     await context.commands.registerCommand(
       id: 'copilot.signIn',
       title: 'GitHub Copilot: Sign In',
       category: 'AI',
       callback: ([args]) async {
+        if (!_providerReady) {
+          final message = switch (_setupStatus) {
+            'error' => 'Copilot Language Server setup failed.',
+            _ => 'Copilot Language Server is still being set up.',
+          };
+          await context.window.showMessage(
+            message,
+            type: switch (_setupStatus) {
+              'error' => MessageType.error,
+              _ => MessageType.info,
+            },
+          );
+          return;
+        }
+
         final status = await _checkStatus(context);
         if (status == 'ok') {
           await context.window

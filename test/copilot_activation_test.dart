@@ -48,15 +48,22 @@ void main() {
       }),
     );
 
-    final commandRequest = await _nextMessage(output);
-    expect(commandRequest['method'], 'commands/register');
-    process.stdin.writeln(
-      jsonEncode({
-        'jsonrpc': '2.0',
-        'id': commandRequest['id'],
-        'result': null,
-      }),
-    );
+    var setupProviderRegistered = false;
+    while (true) {
+      final request = await _nextMessage(output);
+      if (request['method'] == 'languages/registerInlineProvider') {
+        final params = request['params'] as Map<String, dynamic>;
+        expect(params['supportsAuth'], isTrue);
+        expect(params['processName'], contains('Setting up'));
+        setupProviderRegistered = true;
+        _respond(process, request['id'], null);
+        continue;
+      }
+      if (request['method'] == 'commands/register') {
+        _respond(process, request['id'], null);
+        break;
+      }
+    }
 
     int? configurationRequestId;
     while (true) {
@@ -69,6 +76,7 @@ void main() {
     }
 
     expect(configurationRequestId, isNotNull);
+    expect(setupProviderRegistered, isTrue);
     expect(stderrLines, contains('Plugin initialized'));
 
     process.stdin.writeln(
@@ -147,6 +155,10 @@ void main() {
       final method = message['method'];
       final requestId = message['id'];
       if (method == 'commands/register') {
+        _respond(process, requestId, null);
+        continue;
+      }
+      if (method == 'languages/registerInlineProvider') {
         _respond(process, requestId, null);
         continue;
       }
