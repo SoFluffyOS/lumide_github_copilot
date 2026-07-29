@@ -29,5 +29,43 @@ void main() {
         throwsUnsupportedError,
       );
     });
+
+    test('finds the download URL for the current platform', () {
+      const platform = CopilotReleasePlatform(
+        osTag: 'darwin',
+        archTag: 'arm64',
+      );
+      final downloadUrl = platform.findDownloadUrl([
+        {
+          'name': 'copilot-language-server-linux-x64-1.2.3.zip',
+          'browser_download_url': 'https://example.com/linux.zip',
+        },
+        {
+          'name': 'copilot-language-server-darwin-arm64-1.2.3.zip',
+          'browser_download_url': 'https://example.com/macos.zip',
+        },
+      ]);
+
+      expect(downloadUrl, 'https://example.com/macos.zip');
+    });
+
+    test('ignores malformed and incompatible assets', () {
+      const platform = CopilotReleasePlatform(
+        osTag: 'win32',
+        archTag: 'x64',
+      );
+
+      expect(
+        platform.findDownloadUrl([
+          null,
+          {'name': 42},
+          {
+            'name': 'copilot-language-server-win32-arm64-1.2.3.zip',
+            'browser_download_url': 'https://example.com/windows.zip',
+          },
+        ]),
+        isNull,
+      );
+    });
   });
 }

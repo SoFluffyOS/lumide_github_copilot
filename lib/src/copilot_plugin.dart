@@ -17,7 +17,7 @@ class CopilotPlugin extends LumidePlugin {
   Future<void> onActivate(LumideContext context) async {
     final binaryPath = await _ensureBinary(context);
     if (binaryPath == null) {
-      context.window.showMessage(
+      await context.window.showMessage(
         'Failed to download Copilot Language Server.',
         type: MessageType.error,
       );
@@ -130,10 +130,14 @@ class CopilotPlugin extends LumidePlugin {
     final customPath = await context.workspace.getConfiguration(_configPath);
     if (customPath is String && customPath.isNotEmpty) {
       if (await context.fs.exists(customPath)) return customPath;
+      log('[Copilot] Configured language server does not exist: $customPath');
     }
 
     final installDir = await _getInstallDir(context);
-    if (installDir == null) return null;
+    if (installDir == null) {
+      log('[Copilot] Cannot install the language server: home unavailable');
+      return null;
+    }
 
     final binaryName = io.Platform.isWindows
         ? 'copilot-language-server.exe'
@@ -156,12 +160,34 @@ class CopilotPlugin extends LumidePlugin {
       if (await context.fs.exists(binaryPath)) {
         if (!io.Platform.isWindows) {
           try {
-            await context.shell.run('chmod', ['+x', binaryPath]);
-          } catch (_) {}
+            final result = await context.shell.run('chmod', ['+x', binaryPath]);
+            if (result.exitCode != 0) {
+              log(
+                '[Copilot] Failed to make the language server executable: '
+                '${result.stderr}',
+              );
+              return null;
+            }
+          } catch (error, stackTrace) {
+            log(
+              '[Copilot] Failed to make the language server executable: '
+              '$error\n$stackTrace',
+            );
+            return null;
+          }
         }
         return binaryPath;
       }
-    } catch (_) {}
+      log(
+        '[Copilot] Download completed but no binary was extracted to '
+        '$binaryPath',
+      );
+    } catch (error, stackTrace) {
+      log(
+        '[Copilot] Failed to download the language server: '
+        '$error\n$stackTrace',
+      );
+    }
 
     return null;
   }
@@ -175,27 +201,44 @@ class CopilotPlugin extends LumidePlugin {
   }
 
   Future<String?> _fetchLatestDownloadUrl(LumideContext context) async {
-    final assetPrefix = CopilotReleasePlatform.current().assetPrefix;
+    final platform = CopilotReleasePlatform.current();
 
     try {
       final response = await context.http.get(
         _releaseApiUrl,
         headers: {'User-Agent': 'lumide-github-copilot-plugin'},
       );
-      if (response.statusCode != 200) return null;
+      if (response.statusCode != 200) {
+        log(
+          '[Copilot] Release API returned HTTP ${response.statusCode}',
+        );
+        return null;
+      }
 
       final data = jsonDecode(response.body) as Map<String, dynamic>;
       final assets = data['assets'] as List<dynamic>?;
-      if (assets == null) return null;
-
-      for (final asset in assets) {
-        final name = asset['name'] as String? ?? '';
-        if (name.startsWith(assetPrefix) && name.endsWith('.zip')) {
-          return asset['browser_download_url'] as String?;
-        }
+      if (assets == null) {
+        log('[Copilot] Release API response did not contain assets');
+        return null;
       }
-    } catch (e) {
-      log('[Copilot] Failed to fetch latest release: $e');
+
+      final downloadUrl = platform.findDownloadUrl(assets);
+      if (downloadUrl != null) return downloadUrl;
+
+      final availableAssets = assets
+          .whereType<Map<String, dynamic>>()
+          .map((asset) => asset['name'])
+          .whereType<String>()
+          .join(', ');
+      log(
+        '[Copilot] No release asset matched ${platform.assetPrefix}. '
+        'Available assets: $availableAssets',
+      );
+    } catch (error, stackTrace) {
+      log(
+        '[Copilot] Failed to fetch the latest release: '
+        '$error\n$stackTrace',
+      );
     }
     return null;
   }

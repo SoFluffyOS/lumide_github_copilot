@@ -46,4 +46,16 @@ class CopilotReleasePlatform {
   final String archTag;
 
   String get assetPrefix => 'copilot-language-server-$osTag-$archTag-';
+
+  String? findDownloadUrl(List<dynamic> assets) {
+    for (final asset in assets.whereType<Map<String, dynamic>>()) {
+      final name = asset['name'];
+      final downloadUrl = asset['browser_download_url'];
+      if (name is! String || downloadUrl is! String) continue;
+      if (name.startsWith(assetPrefix) && name.endsWith('.zip')) {
+        return downloadUrl;
+      }
+    }
+    return null;
+  }
 }
