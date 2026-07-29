@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io' as io;
 
 import 'package:lumide_api/lumide_api.dart';
+import 'package:lumide_github_copilot/src/copilot_release_platform.dart';
 import 'package:path/path.dart' as p;
 
 class CopilotPlugin extends LumidePlugin {
@@ -174,9 +175,7 @@ class CopilotPlugin extends LumidePlugin {
   }
 
   Future<String?> _fetchLatestDownloadUrl(LumideContext context) async {
-    final os = _getOsTag();
-    final arch = _getArchTag();
-    final assetPrefix = 'copilot-language-server-$os-$arch-';
+    final assetPrefix = CopilotReleasePlatform.current().assetPrefix;
 
     try {
       final response = await context.http.get(
@@ -199,19 +198,5 @@ class CopilotPlugin extends LumidePlugin {
       log('[Copilot] Failed to fetch latest release: $e');
     }
     return null;
-  }
-
-  String _getOsTag() {
-    if (io.Platform.isMacOS) return 'macos';
-    if (io.Platform.isWindows) return 'win';
-    return 'linux';
-  }
-
-  String _getArchTag() {
-    final arch = io.Platform.version.contains('arm') ||
-            io.Platform.version.contains('aarch')
-        ? 'arm64'
-        : 'x64';
-    return arch;
   }
 }
