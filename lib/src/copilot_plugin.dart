@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io' as io;
 
@@ -15,6 +16,11 @@ class CopilotPlugin extends LumidePlugin {
 
   @override
   Future<void> onActivate(LumideContext context) async {
+    await _registerSignInCommand(context);
+    unawaited(_setupLanguageServer(context));
+  }
+
+  Future<void> _setupLanguageServer(LumideContext context) async {
     final binaryPath = await _ensureBinary(context);
     if (binaryPath == null) {
       await context.window.showMessage(
@@ -24,30 +30,44 @@ class CopilotPlugin extends LumidePlugin {
       return;
     }
 
-    // Register the copilot-language-server as a standard LSP provider.
-    await context.languages.registerLanguageServer(
-      id: _providerId,
-      displayName: 'GitHub Copilot',
-      iconPath: 'assets/icon.svg',
-      languageId: '*',
-      fileExtensions: const [],
-      command: binaryPath,
-      args: const ['--stdio'],
-      initializationOptions: {
-        'editorInfo': {'name': 'Lumide', 'version': _version},
-        'editorPluginInfo': {
-          'name': 'lumide-github-copilot',
-          'version': _version
+    try {
+      await context.languages.registerLanguageServer(
+        id: _providerId,
+        displayName: 'GitHub Copilot',
+        iconPath: 'assets/icon.svg',
+        languageId: '*',
+        fileExtensions: const [],
+        command: binaryPath,
+        args: const ['--stdio'],
+        initializationOptions: {
+          'editorInfo': {'name': 'Lumide', 'version': _version},
+          'editorPluginInfo': {
+            'name': 'lumide-github-copilot',
+            'version': _version,
+          },
         },
-      },
-      checkStatus: () => _checkStatus(context),
-      signIn: () => _signInFlow(context),
-      signOut: () async {
-        await context.languages.sendLspRequest(_providerId, 'signOut', {});
-      },
-    );
+        checkStatus: () => _checkStatus(context),
+        signIn: () => _signInFlow(context),
+        signOut: () async {
+          await context.languages.sendLspRequest(_providerId, 'signOut', {});
+        },
+      );
+    } catch (error, stackTrace) {
+      log(
+        '[Copilot] Failed to register the language server: '
+        '$error\n$stackTrace',
+      );
+      await context.window.showMessage(
+        'Failed to start Copilot Language Server.',
+        type: MessageType.error,
+      );
+      return;
+    }
 
-    // Register a command to manually trigger sign in from Command Palette
+    unawaited(_setEditorInfo(context));
+  }
+
+  Future<void> _registerSignInCommand(LumideContext context) async {
     await context.commands.registerCommand(
       id: 'copilot.signIn',
       title: 'GitHub Copilot: Sign In',
@@ -62,19 +82,20 @@ class CopilotPlugin extends LumidePlugin {
         await _signInFlow(context);
       },
     );
+  }
 
-    // Set editor info after initialization
-    Future(() async {
-      try {
-        await context.languages.sendLspRequest(_providerId, 'setEditorInfo', {
-          'editorInfo': {'name': 'Lumide', 'version': _version},
-          'editorPluginInfo': {
-            'name': 'lumide-github-copilot',
-            'version': _version
-          },
-        });
-      } catch (_) {}
-    });
+  Future<void> _setEditorInfo(LumideContext context) async {
+    try {
+      await context.languages.sendLspRequest(_providerId, 'setEditorInfo', {
+        'editorInfo': {'name': 'Lumide', 'version': _version},
+        'editorPluginInfo': {
+          'name': 'lumide-github-copilot',
+          'version': _version,
+        },
+      });
+    } catch (error, stackTrace) {
+      log('[Copilot] Failed to set editor info: $error\n$stackTrace');
+    }
   }
 
   Future<String> _checkStatus(LumideContext context) async {
