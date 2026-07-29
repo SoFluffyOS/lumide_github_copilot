@@ -58,18 +58,47 @@ void main() {
       }),
     );
 
-    var binarySetupStarted = false;
+    int? configurationRequestId;
     while (true) {
       final message = await _nextMessage(output);
       if (message['method'] == 'workspace/getConfiguration') {
-        binarySetupStarted = true;
+        configurationRequestId = message['id'] as int;
         continue;
       }
       if (message['id'] == 99 && message.containsKey('result')) break;
     }
 
-    expect(binarySetupStarted, isTrue);
+    expect(configurationRequestId, isNotNull);
     expect(stderrLines, contains('Plugin initialized'));
+
+    process.stdin.writeln(
+      jsonEncode({
+        'jsonrpc': '2.0',
+        'id': configurationRequestId,
+        'error': {
+          'code': 500,
+          'message': 'Configuration unavailable',
+        },
+      }),
+    );
+
+    final errorMessage = await _nextMessage(output);
+    expect(errorMessage['method'], 'window/showMessage');
+
+    process.stdin.writeln(
+      jsonEncode({
+        'jsonrpc': '2.0',
+        'id': 100,
+        'method': 'getProcessInfo',
+      }),
+    );
+    while (true) {
+      final message = await _nextMessage(output);
+      if (message['id'] == 100) {
+        expect(message['result'], contains('rss'));
+        break;
+      }
+    }
   });
 }
 

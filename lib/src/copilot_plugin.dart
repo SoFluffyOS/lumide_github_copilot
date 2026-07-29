@@ -14,14 +14,50 @@ class CopilotPlugin extends LumidePlugin {
   static const _configPath = 'copilot.languageServerPath';
   static const _version = '1.0.0';
 
+  bool _isActive = false;
+
   @override
   Future<void> onActivate(LumideContext context) async {
+    _isActive = true;
     await _registerSignInCommand(context);
-    unawaited(_setupLanguageServer(context));
+    unawaited(_runLanguageServerSetup(context));
+  }
+
+  @override
+  Future<void> onDeactivate() async {
+    _isActive = false;
+  }
+
+  Future<void> _runLanguageServerSetup(LumideContext context) async {
+    try {
+      await _setupLanguageServer(context);
+    } catch (error, stackTrace) {
+      log(
+        '[Copilot] Language server setup failed: '
+        '$error\n$stackTrace',
+      );
+      if (!_isActive) return;
+
+      try {
+        await context.window.showMessage(
+          'Failed to set up Copilot Language Server.',
+          type: MessageType.error,
+        );
+      } catch (messageError, messageStackTrace) {
+        log(
+          '[Copilot] Failed to show the setup error: '
+          '$messageError\n$messageStackTrace',
+        );
+      }
+    }
   }
 
   Future<void> _setupLanguageServer(LumideContext context) async {
+    if (!_isActive) return;
+
     final binaryPath = await _ensureBinary(context);
+    if (!_isActive) return;
+
     if (binaryPath == null) {
       await context.window.showMessage(
         'Failed to download Copilot Language Server.',
@@ -64,7 +100,7 @@ class CopilotPlugin extends LumidePlugin {
       return;
     }
 
-    unawaited(_setEditorInfo(context));
+    if (_isActive) unawaited(_setEditorInfo(context));
   }
 
   Future<void> _registerSignInCommand(LumideContext context) async {
