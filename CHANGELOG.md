@@ -1,3 +1,11 @@
+# 1.0.1
+
+### 🐛 Fixes
+
+- Support GitHub Copilot's updated macOS asset tag (`macos` → `darwin`).
+- Improve binary download, validation, recovery, and error reporting.
+- Prevent activation timeouts and show setup status while Copilot initializes.
+
 # 1.0.0
 
 ### 🚀 New Features
