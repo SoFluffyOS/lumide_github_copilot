@@ -48,17 +48,8 @@ void main() {
       }),
     );
 
-    var setupProviderRegistered = false;
     while (true) {
       final request = await _nextMessage(output);
-      if (request['method'] == 'languages/registerInlineProvider') {
-        final params = request['params'] as Map<String, dynamic>;
-        expect(params['supportsAuth'], isTrue);
-        expect(params['processName'], contains('Setting up'));
-        setupProviderRegistered = true;
-        _respond(process, request['id'], null);
-        continue;
-      }
       if (request['method'] == 'commands/register') {
         _respond(process, request['id'], null);
         break;
@@ -76,7 +67,6 @@ void main() {
     }
 
     expect(configurationRequestId, isNotNull);
-    expect(setupProviderRegistered, isTrue);
     expect(stderrLines, contains('Plugin initialized'));
 
     process.stdin.writeln(
@@ -107,6 +97,117 @@ void main() {
         break;
       }
     }
+  });
+
+  test('registers the language server and its auth callbacks once', () async {
+    final process = await Process.start(
+      Platform.resolvedExecutable,
+      ['run', 'bin/main.dart'],
+      workingDirectory: Directory.current.path,
+    );
+    final stderrLines = <String>[];
+    final stderrSubscription = process.stderr
+        .transform(utf8.decoder)
+        .transform(const LineSplitter())
+        .listen(stderrLines.add);
+    final output = StreamIterator(
+      process.stdout
+          .transform(utf8.decoder)
+          .transform(const LineSplitter())
+          .map((line) => jsonDecode(line) as Map<String, dynamic>),
+    );
+
+    addTearDown(() async {
+      await process.stdin.close();
+      await process.exitCode.timeout(
+        const Duration(seconds: 5),
+        onTimeout: () {
+          process.kill();
+          return process.exitCode;
+        },
+      );
+      await output.cancel();
+      await stderrSubscription.cancel();
+    });
+
+    process.stdin.writeln(
+      jsonEncode({
+        'jsonrpc': '2.0',
+        'id': 99,
+        'method': 'initialize',
+        'params': {
+          'pluginId': 'lumide_github_copilot',
+          'version': '1.0.0',
+        },
+      }),
+    );
+
+    var languageServerRegistered = false;
+    while (!languageServerRegistered) {
+      final message = await _nextMessage(output);
+      final method = message['method'];
+      final requestId = message['id'];
+
+      if (method == 'commands/register') {
+        _respond(process, requestId, null);
+        continue;
+      }
+      if (method == 'workspace/getConfiguration') {
+        _respond(process, requestId, '/tmp/copilot-language-server');
+        continue;
+      }
+      if (method == 'shell/run') {
+        _respond(process, requestId, {
+          'exitCode': 0,
+          'stdout': '1.0.0',
+          'stderr': '',
+        });
+        continue;
+      }
+      if (method == 'languages/registerServer') {
+        final params = message['params'] as Map<String, dynamic>;
+        expect(params['id'], 'copilot');
+        expect(params['supportsAuth'], isTrue);
+        languageServerRegistered = true;
+        _respond(process, requestId, null);
+        continue;
+      }
+      if (method == 'languages/registerInlineProvider') {
+        fail('Copilot must not register a placeholder inline provider.');
+      }
+      if (method == 'window/showMessage') {
+        fail('Language server setup failed: ${message['params']}');
+      }
+    }
+
+    process.stdin.writeln(
+      jsonEncode({
+        'jsonrpc': '2.0',
+        'id': 100,
+        'method': 'languages/aiCheckStatus',
+        'params': {'id': 'copilot'},
+      }),
+    );
+
+    while (true) {
+      final message = await _nextMessage(output);
+      if (message['method'] == 'languages/sendLspRequest') {
+        final params = message['params'] as Map<String, dynamic>;
+        final result =
+            params['method'] == 'checkStatus' ? {'status': 'OK'} : null;
+        _respond(process, message['id'], result);
+        continue;
+      }
+      if (message['id'] == 100) {
+        expect(message['result'], 'ok');
+        break;
+      }
+    }
+
+    expect(
+      stderrLines.join('\n'),
+      isNot(contains('already a method named')),
+    );
   });
 
   test('invalid installed binary triggers a fresh download', () async {
@@ -155,10 +256,6 @@ void main() {
       final method = message['method'];
       final requestId = message['id'];
       if (method == 'commands/register') {
-        _respond(process, requestId, null);
-        continue;
-      }
-      if (method == 'languages/registerInlineProvider') {
         _respond(process, requestId, null);
         continue;
       }

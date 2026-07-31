@@ -23,7 +23,6 @@ class CopilotPlugin extends LumidePlugin {
     _isActive = true;
     _providerReady = false;
     _setupStatus = 'initializing';
-    await _registerSetupProvider(context);
     await _registerSignInCommand(context);
     unawaited(_runLanguageServerSetup(context));
   }
@@ -112,29 +111,6 @@ class CopilotPlugin extends LumidePlugin {
     }
 
     if (_isActive) unawaited(_setEditorInfo(context));
-  }
-
-  Future<void> _registerSetupProvider(LumideContext context) async {
-    await context.languages.registerInlineCompletionProvider(
-      id: _providerId,
-      displayName: 'GitHub Copilot',
-      processName: 'Setting up Copilot Language Server...',
-      iconPath: 'assets/icon.svg',
-      supportsAuth: true,
-      onProvideCompletions: (_) async => const [],
-      checkStatus: () async {
-        if (_providerReady) return _checkStatus(context);
-        return _setupStatus;
-      },
-      signIn: () async {
-        if (_providerReady) return _signInFlow(context);
-        return {'userCode': '', 'verificationUri': '', 'expiresIn': 0};
-      },
-      signOut: () async {
-        if (!_providerReady) return;
-        await context.languages.sendLspRequest(_providerId, 'signOut', {});
-      },
-    );
   }
 
   Future<void> _registerSignInCommand(LumideContext context) async {
