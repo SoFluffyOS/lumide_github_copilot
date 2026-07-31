@@ -1,3 +1,9 @@
+# 1.0.2
+
+### 🐛 Fixes
+
+- Fix duplicate registration, causing Copilot LSP fail to start.
+
 # 1.0.1
 
 ### 🐛 Fixes
